@@ -157,7 +157,8 @@
       "#demobar a{color:#111;background:#fff;text-decoration:none;padding:5px 12px;border-radius:999px;font-weight:600}" +
       "#demobar a:focus-visible{outline:2px solid #fff;outline-offset:2px}" +
       "#demobar button{all:unset;cursor:pointer;opacity:.7;padding:0 6px;font-size:16px}" +
-      "@media (max-width:700px){#demobar .k{display:none}}" +
+      "#demobar>*{white-space:nowrap}" +
+      "@media (max-width:700px){#demobar .k{display:none}#demonote{font-size:11px;padding:4px 8px}}" +
       "#demonote{position:fixed;z-index:2147483000;left:50%;bottom:8px;transform:translateX(-50%);max-width:calc(100% - 32px);box-sizing:border-box;" +
       "padding:5px 12px;border-radius:8px;text-align:center;font:400 12px/1.4 system-ui,-apple-system,Segoe UI,sans-serif;" +
       "color:rgba(255,255,255,.75);background:rgba(20,22,28,.5);pointer-events:none}";
