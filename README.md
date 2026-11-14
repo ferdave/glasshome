@@ -6,6 +6,14 @@ full-screen scenes, a dock of white app logos, a smart-home widget and dashboard
 
 Built for and tested on a Hisense Google TV (Android 14), 1920×1080 UI. Works with the TV remote only.
 
+**Try it in your browser: [glasshome.fernandos.ca](https://glasshome.fernandos.ca)**. This is the real UI with made-up
+smart-home data: use the arrow keys, Enter and Esc, or click. The demo is built from the app's own pages by
+`demo/build.sh` (Cloudflare Pages: build command `bash demo/build.sh`, output directory `demo/dist`).
+
+> **Demo-only extras:** the smart-home devices and cameras in the web demo are simulated (camera feeds are drawn
+> from the bundled scene photos), and the dock's **bounce and edge fade** that hint at more apps exist only in the
+> web demo (`demo/dock-hints.js`). The TV app doesn't have them.
+
 ## Features
 
 **Home screen**

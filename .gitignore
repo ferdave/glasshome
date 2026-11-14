@@ -16,3 +16,5 @@ app/build/
 # Local screenshots from testing (may show cameras / home)
 *.png
 !app/src/main/res/**/*.png
+# Web demo build output
+demo/dist/

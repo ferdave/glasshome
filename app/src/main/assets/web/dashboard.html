@@ -131,7 +131,7 @@
   // Load a fresh still for each camera tile; a camera that returns no picture is marked on its own
   let snapBusy = false;
   function refreshSnaps() {
-    if (snapBusy || camModalOpen() || camOnline === false) return;
+    if (!cfg.go2rtc || snapBusy || camModalOpen() || camOnline === false) return;
     const cams = Array.from(document.querySelectorAll(".cam[data-src]"));
     if (!cams.length) return;
     snapBusy = true;

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demo camera</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { width: 100%; height: 100%; object-fit: contain; display: block; }
+  p { position: absolute; color: #bbb; font: 500 16px system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<!-- Stands in for go2rtc's stream.html in the Glass Home web demo -->
+<canvas id="v"></canvas>
+<script src="cam.js"></script>
+<script>
+  var src = new URLSearchParams(location.search).get("src") || "";
+  DemoCams.play(document.getElementById("v"), src).catch(function () {
+    var p = document.createElement("p"); p.textContent = "No such demo camera"; document.body.appendChild(p);
+  });
+</script>
+</body>
+</html>
