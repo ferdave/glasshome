@@ -1,0 +1,18 @@
+﻿# Private / machine-specific — never commit
+config.json
+privacy-applied.txt
+local.properties
+wallpapers/
+logos-custom/
+*.apk
+*.keystore
+*.jks
+# Build output
+.gradle/
+build/
+app/build/
+.idea/
+*.iml
+# Local screenshots from testing (may show cameras / home)
+*.png
+!app/src/main/res/**/*.png

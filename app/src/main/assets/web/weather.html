@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920, user-scalable=no">
+<title>Weather</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Geist:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<script src="config.default.js"></script>
+<script src="core.js"></script>
+</head>
+<body>
+<div id="stage">
+  <div class="wall-fallback"></div>
+  <div class="scrim"></div>
+  <div class="page">
+    <header class="header" data-zone="header">
+      <div class="left">
+        <a class="iconbtn focusable" href="index.html" aria-label="Back to home screen">
+          <svg aria-hidden="true" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+        </a>
+        <div class="clock" data-clock>--:--</div>
+        <div class="title" id="place">Weather</div>
+      </div>
+      <nav class="tabs glass" aria-label="Weather views" id="tabs"></nav>
+    </header>
+    <div id="body" data-zone="body" style="flex:1;min-height:0;display:flex;flex-direction:column"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  const TABS = ["Now", "Hourly", "7-day"];
+  let tab = 0, data = null;
+  const DIRS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+  const r = (v) => Math.round(v);
+  const timeOf = (iso) => { const d = new Date(iso); let h = d.getHours(); const m = String(d.getMinutes()).padStart(2, "0"); if (!cfg.clock24h) return (h % 12 || 12) + ":" + m + (h < 12 ? " AM" : " PM"); return h + ":" + m; };
+  const hourOf = (iso) => { const h = new Date(iso).getHours(); return cfg.clock24h ? h + ":00" : (h % 12 || 12) + (h < 12 ? " AM" : " PM"); };
+  const aqiText = (v) => v == null ? "—" : v <= 50 ? "Good" : v <= 100 ? "Moderate" : v <= 150 ? "Unhealthy for some" : "Unhealthy";
+  const uvText = (v) => v < 3 ? "Low" : v < 6 ? "Moderate" : v < 8 ? "High" : "Very high";
+
+  function renderTabs() {
+    const nav = $("#tabs");
+    nav.innerHTML = "";
+    TABS.forEach((name, i) => {
+      const b = el("button", "tab focusable" + (i === tab ? " active" : ""), esc(name));
+      if (i === 0) b.setAttribute("data-autofocus", "");
+      if (i === tab) b.setAttribute("data-entry", "");
+      b.addEventListener("click", () => { tab = i; renderTabs(); render(); focusEl(nav.children[i]); });
+      nav.appendChild(b);
+    });
+  }
+
+  function hourIndex() {
+    const h = data.f.hourly.time;
+    const now = Date.now();
+    let i = h.findIndex((t) => new Date(t).getTime() > now - 3600e3);
+    return i < 0 ? 0 : i;
+  }
+
+  function renderNow() {
+    const c = data.f.current, d = data.f.daily, h = data.f.hourly;
+    const [txt, kind] = WMO(c.weather_code);
+    const i0 = hourIndex();
+    let maxP = 0, sumMm = 0, firstWet = null;
+    for (let i = i0; i < Math.min(i0 + 6, h.time.length); i++) {
+      maxP = Math.max(maxP, h.precipitation_probability[i] || 0);
+      sumMm += h.precipitation[i] || 0;
+    }
+    for (let i = i0; i < Math.min(i0 + 24, h.time.length); i++) if ((h.precipitation_probability[i] || 0) >= 50) { firstWet = h.time[i]; break; }
+    const outlook = firstWet ? "Rain or snow likely around " + hourOf(firstWet) : "Dry for the next 24 hours";
+    const stats = [
+      ["Wind", r(c.wind_speed_10m) + " km/h", DIRS[Math.round(c.wind_direction_10m / 45) % 8] + " · gusts " + r(c.wind_gusts_10m)],
+      ["Rain next 6 h", maxP + "%", sumMm > 0 ? "About " + (Math.round(sumMm * 10) / 10) + " mm" : "No rain expected"],
+      ["Humidity", r(c.relative_humidity_2m) + "%", "Dew point " + r(c.dew_point_2m) + "°"],
+      ["Air quality", data.aqi == null ? "—" : String(r(data.aqi)), aqiText(data.aqi)],
+      ["UV index", String(r(c.uv_index || 0)), uvText(c.uv_index || 0)],
+      ["Sun", timeOf(d.sunset[0]), "Sunset · rise " + timeOf(d.sunrise[0])]
+    ];
+    $("#body").innerHTML =
+      '<div class="wx-now">' +
+        '<section class="wx-cur glass" aria-label="Current conditions">' +
+          '<div class="cond">' + wxIcon(kind, 96) + '<div><b>' + esc(txt) + '</b><span>' + esc(outlook) + '</span></div></div>' +
+          '<div class="big">' + r(c.temperature_2m) + '°</div>' +
+          '<div class="hl"><span><span>Feels like </span>' + r(c.apparent_temperature) + '°</span><span><span>H </span>' + r(d.temperature_2m_max[0]) + '°</span><span><span>L </span>' + r(d.temperature_2m_min[0]) + '°</span></div>' +
+          '<div class="wx-alert">' + esc(cfg.location.name) + ' · Open-Meteo forecast</div>' +
+        '</section>' +
+        '<div class="wx-stats">' + stats.map((s) => '<div class="wx-stat glass"><span class="l">' + esc(s[0]) + '</span><span><span class="v" style="display:block">' + esc(s[1]) + '</span><span class="n" style="display:block">' + esc(s[2]) + "</span></span></div>").join("") + "</div>" +
+      "</div>";
+  }
+
+  // ---------- Hourly: temperature curve + chance of precipitation (like iOS "Conditions") ----------
+  let day = -1;          // -1 = next 24 hours, 0..6 = that calendar day
+  let feels = false;     // Actual / Feels like
+
+  const dayName = (i) => i === 0 ? "Today" : new Date(data.f.daily.time[i] + "T12:00").toLocaleDateString("en-CA", { weekday: "short" });
+  const dayLong = (i) => i === 0 ? "Today" : new Date(data.f.daily.time[i] + "T12:00").toLocaleDateString("en-CA", { weekday: "long" });
+
+  function hourRange() {
+    const h = data.f.hourly;
+    if (day < 0) { const i0 = hourIndex(); return [i0, Math.min(i0 + 24, h.time.length)]; }
+    const pre = data.f.daily.time[day];
+    const first = h.time.findIndex((t) => t.startsWith(pre));
+    return first < 0 ? [0, 24] : [first, Math.min(first + 24, h.time.length)];
+  }
+
+  // Smooth path through points (Catmull-Rom -> cubic Bezier)
+  function smooth(pts) {
+    let d = "M" + pts[0][0] + "," + pts[0][1];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+      const c1x = p1[0] + (p2[0] - p0[0]) / 6, c1y = p1[1] + (p2[1] - p0[1]) / 6;
+      const c2x = p2[0] - (p3[0] - p1[0]) / 6, c2y = p2[1] - (p3[1] - p1[1]) / 6;
+      d += " C" + c1x + "," + c1y + " " + c2x + "," + c2y + " " + p2[0] + "," + p2[1];
+    }
+    return d;
+  }
+
+  // Generic chart: values on a fixed y-scale, gridlines + right-hand axis, x labels every 6 h
+  function chart(o) {
+    const W = o.w, H = o.h, L = 10, R = 90, T = o.top || 16, B = 44;
+    const n = o.values.length;
+    const x = (i) => L + (i * (W - L - R)) / Math.max(1, n - 1);
+    const y = (v) => T + (1 - (v - o.min) / (o.max - o.min)) * (H - T - B);
+    const pts = o.values.map((v, i) => [x(i), y(v)]);
+    const line = o.step ? "M" + pts.map((p) => p[0] + "," + p[1]).join(" L") : smooth(pts);
+    const area = line + " L" + x(n - 1) + "," + (H - B) + " L" + x(0) + "," + (H - B) + " Z";
+    let s = '<svg viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '" aria-hidden="true">';
+    s += '<defs><linearGradient id="' + o.id + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + o.color + '" stop-opacity="0.55"/><stop offset="1" stop-color="' + o.color2 + '" stop-opacity="0.25"/></linearGradient></defs>';
+    o.ticks.forEach((t) => {
+      s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(t) + '" y2="' + y(t) + '" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>';
+      s += '<text x="' + (W - R + 14) + '" y="' + (y(t) + 8) + '" fill="rgba(255,255,255,0.75)" font-size="22">' + t + o.unit + "</text>";
+    });
+    o.xlabels.forEach(([i, label]) => {
+      s += '<line x1="' + x(i) + '" x2="' + x(i) + '" y1="' + T + '" y2="' + (H - B) + '" stroke="rgba(255,255,255,0.18)" stroke-dasharray="3 5"/>';
+      s += '<text x="' + (x(i) + 6) + '" y="' + (H - 12) + '" fill="rgba(255,255,255,0.8)" font-size="22">' + label + "</text>";
+    });
+    if (o.bars) o.bars.forEach((b, i) => {
+      if (b <= 0) return;
+      const bh = Math.min(1, b / o.barMax) * (H - T - B) * 0.45, bw = Math.max(6, (W - L - R) / n * 0.5);
+      s += '<rect x="' + (x(i) - bw / 2) + '" y="' + (H - B - bh) + '" width="' + bw + '" height="' + bh + '" rx="3" fill="rgba(255,255,255,0.5)"/>';
+      s += '<text x="' + x(i) + '" y="' + (H - B - bh - 8) + '" fill="#ffffff" font-size="18" text-anchor="middle">' + (Math.round(b * 10) / 10) + "</text>";
+    });
+    s += '<path d="' + area + '" fill="url(#' + o.id + ')"/>';
+    s += '<path d="' + line + '" fill="none" stroke="' + o.color + '" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>';
+    (o.markers || []).forEach(([i, label]) => {
+      s += '<circle cx="' + x(i) + '" cy="' + y(o.values[i]) + '" r="10" fill="#12181c" stroke="' + o.color + '" stroke-width="5"/>';
+      s += '<text x="' + x(i) + '" y="' + (y(o.values[i]) - 22) + '" fill="#ffffff" font-size="24" font-weight="600" text-anchor="middle">' + label + "</text>";
+    });
+    if (o.nowX != null) s += '<line x1="' + x(o.nowX) + '" x2="' + x(o.nowX) + '" y1="' + T + '" y2="' + (H - B) + '" stroke="#ffffff" stroke-width="2"/>';
+    return s + "</svg>";
+  }
+
+  function renderHourly() {
+    const h = data.f.hourly;
+    const [a, b] = hourRange();
+    const idx = []; for (let i = a; i < b; i++) idx.push(i);
+    const temps = idx.map((i) => (feels ? h.apparent_temperature[i] : h.temperature_2m[i]));
+    const probs = idx.map((i) => h.precipitation_probability[i] || 0);
+    const mms = idx.map((i) => h.precipitation[i] || 0);
+    const xl = idx.map((i, k) => [k, hourOf(h.time[i])]).filter((_, k) => k % 6 === 0);
+    let lo = Math.floor(Math.min(...temps) / 5) * 5 - 5, hi = Math.ceil(Math.max(...temps) / 5) * 5 + 5;
+    const tTicks = []; for (let t = lo; t <= hi; t += 5) tTicks.push(t);
+    const iMin = temps.indexOf(Math.min(...temps)), iMax = temps.indexOf(Math.max(...temps));
+    const W = 1560;
+
+    // Weather icons above the temperature chart, one every 2 hours
+    let icons = "";
+    idx.forEach((i, k) => {
+      if (k % 2 !== 0) return;
+      let kind = WMO(h.weather_code[i])[1];
+      if (kind === "sun" && h.is_day && h.is_day[i] === 0) kind = "moon";
+      icons += '<span class="wxi">' + wxIcon(kind, 34) + "</span>";
+    });
+
+    const dayMax = day < 0 ? Math.max(...probs) : (data.f.daily.precipitation_probability_max[day] || 0);
+    const totalMm = Math.round(mms.reduce((s, v) => s + v, 0) * 10) / 10;
+
+    const chips = ['<button class="tab focusable' + (day < 0 ? " active" : "") + '" data-day="-1">Next 24 h</button>']
+      .concat(data.f.daily.time.map((_, i) => '<button class="tab focusable' + (day === i ? " active" : "") + '" data-day="' + i + '">' + dayName(i) + "</button>")).join("");
+
+    $("#body").innerHTML =
+      '<section class="wx-panel wx-hourly glass" aria-label="Hourly conditions">' +
+        '<div class="head"><div class="tabs daychips">' + chips + '</div>' +
+          '<div class="tabs"><button class="tab focusable' + (!feels ? " active" : "") + '" data-feels="0">Actual</button><button class="tab focusable' + (feels ? " active" : "") + '" data-feels="1">Feels like</button></div></div>' +
+        '<div class="chartblock"><div class="charttitle"><b>' + (feels ? "Feels like" : "Temperature") + '</b><span>' + (day < 0 ? "Next 24 hours" : dayLong(day)) + " · H " + r(Math.max(...temps)) + "° L " + r(Math.min(...temps)) + '°</span></div>' +
+          '<div class="iconrow">' + icons + "</div>" +
+          chart({ id: "gT", values: temps, min: lo, max: hi, w: W, h: 300, color: "#6fd6d6", color2: "#1f5fa8", unit: "°", ticks: tTicks.filter((t, i) => i % 1 === 0), xlabels: xl, markers: [[iMin, "L"], [iMax, "H"]], nowX: day < 0 ? 0 : null }) +
+        "</div>" +
+        '<div class="chartblock"><div class="charttitle"><b>Chance of Precipitation</b><span>' + (day < 0 ? "Next 24 h" : dayLong(day)) + "'s chance: " + dayMax + "%" + (totalMm > 0 ? " · " + totalMm + " mm total (bars = mm per hour)" : " · no measurable rain or snow") + "</span></div>" +
+          chart({ id: "gP", values: probs, min: 0, max: 100, w: W, h: 250, top: 26, color: "#5ac8fa", color2: "#5ac8fa", unit: "%", ticks: [0, 20, 40, 60, 80, 100], xlabels: xl, step: true, bars: mms, barMax: Math.max(2, ...mms) }) +
+        "</div>" +
+      "</section>";
+
+    document.querySelectorAll("[data-day]").forEach((btn) => btn.addEventListener("click", () => { day = +btn.dataset.day; renderHourly(); focusEl($('[data-day="' + day + '"]')); }));
+    document.querySelectorAll("[data-feels]").forEach((btn) => btn.addEventListener("click", () => { feels = btn.dataset.feels === "1"; renderHourly(); focusEl($('[data-feels="' + (feels ? 1 : 0) + '"]')); }));
+  }
+
+  // ---------- 7-day (like iOS: % under the icon, range bar) ----------
+  function renderWeek() {
+    const d = data.f.daily;
+    const lo = Math.min(...d.temperature_2m_min) - 1, hi = Math.max(...d.temperature_2m_max) + 1;
+    const pos = (v) => ((v - lo) / (hi - lo)) * 100;
+    const nowT = data.f.current.temperature_2m;
+    let rows = "";
+    for (let i = 0; i < d.time.length; i++) {
+      const [txt, kind] = WMO(d.weather_code[i]);
+      const p = d.precipitation_probability_max[i] || 0;
+      const snow = d.snowfall_sum[i] || 0, rain = d.precipitation_sum[i] || 0;
+      const amt = snow > 0.2 ? (Math.round(snow * 10) / 10) + " cm" : rain > 0.2 ? Math.round(rain) + " mm" : "";
+      const l = d.temperature_2m_min[i], h = d.temperature_2m_max[i];
+      const nowDot = i === 0 ? '<b class="now" style="left:' + pos(nowT) + '%"></b>' : "";
+      rows += '<button class="day focusable" data-week="' + i + '"><span class="d">' + dayName(i) + '</span>' +
+        '<span class="i">' + wxIcon(kind, 44) + (p >= 20 || amt || kind === "rain" || kind === "snow" ? '<em>' + p + "%</em>" : "") + '</span>' +
+        '<span class="c">' + esc(txt) + '</span><span class="pr">' + esc(amt) + '</span>' +
+        '<span class="lo">' + r(l) + '°</span><span class="track"><i style="left:' + pos(l) + "%;width:" + (pos(h) - pos(l)) + '%"></i>' + nowDot + '</span><span class="hi">' + r(h) + "°</span></button>";
+    }
+    $("#body").innerHTML = '<section class="wx-panel wx-week glass" aria-label="7-day forecast">' + rows + "</section>";
+    document.querySelectorAll("[data-week]").forEach((btn) => btn.addEventListener("click", () => {
+      day = +btn.dataset.week; tab = 1; renderTabs(); render(); focusEl($('[data-day="' + day + '"]'));
+    }));
+  }
+
+  function render() {
+    if (!data) return;
+    [renderNow, renderHourly, renderWeek][tab]();
+  }
+
+  async function load(force) {
+    try {
+      data = await weather(force);
+      render();
+    } catch (e) {
+      $("#body").innerHTML = '<div class="notice">Weather unavailable: ' + esc(e.message) + "</div>";
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    $("#place").textContent = "Weather · " + cfg.location.name;
+    renderTabs();
+    load(false);
+    setInterval(() => load(true), 15 * 60 * 1000);
+    setTimeout(() => focusEl($(".tab")), 200);
+  });
+})();
+</script>
+</body>
+</html>

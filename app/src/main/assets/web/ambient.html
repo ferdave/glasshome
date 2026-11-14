@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920, user-scalable=no">
+<title>Screensaver</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<script src="config.default.js"></script>
+<script src="core.js"></script>
+</head>
+<body data-scenes class="amb">
+<!-- Glass Home screensaver: the scene with the big glass clock, nothing else. Any key returns home. -->
+<div id="stage">
+  <div class="wall-fallback"></div>
+  <div class="dateline"><span class="ambdate" id="dateText"></span></div>
+</div>
+<script>
+(function () {
+  "use strict";
+  document.addEventListener("DOMContentLoaded", () => {
+    startScenes({ full: true });
+    const paint = async () => {
+      let t = new Date().toLocaleDateString("en-CA", { weekday: "long", day: "numeric", month: "long" });
+      try {
+        const w = await weather();
+        t += "  ·  " + Math.round(w.f.current.temperature_2m) + "° " + WMO(w.f.current.weather_code)[0];
+      } catch (e) {}
+      $("#dateText").textContent = t;
+    };
+    paint();
+    setInterval(paint, 60000);
+  });
+  // any remote key (arrows/OK/Back) leaves the screensaver
+  const leave = () => { location.href = "index.html"; return true; };
+  window.addEventListener("load", () => {
+    window.__tvKey = leave;
+    window.backHandlers.push(leave);
+    document.addEventListener("keydown", leave, true);
+  });
+})();
+</script>
+</body>
+</html>

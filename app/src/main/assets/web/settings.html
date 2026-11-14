@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920, user-scalable=no">
+<title>Glass Home settings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Geist:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<script src="config.default.js"></script>
+<script src="privacy-list.js"></script>
+<script src="core.js"></script>
+</head>
+<body>
+<div id="stage">
+  <div class="wall-fallback"></div>
+  <div class="scrim"></div>
+  <div class="page">
+    <header class="header" data-zone="header">
+      <div class="left">
+        <a class="iconbtn focusable" href="index.html" aria-label="Back to home screen">
+          <svg aria-hidden="true" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+        </a>
+        <div class="clock" data-clock>--:--</div>
+        <div class="title">Glass Home settings</div>
+      </div>
+    </header>
+
+    <div class="setbody" id="setbody" data-zone="main">
+      <!-- Scene -->
+      <section class="setcard glass">
+        <h2>Home scene</h2>
+        <p class="sub">Auto picks the scene from the sun and the weather at your location: night, dawn, golden hour, a clear day (waterline) or a grey/wet day (fog).</p>
+        <div class="pills" id="scenePills"></div>
+      </section>
+
+      <!-- Privacy -->
+      <section class="setcard glass">
+        <h2>Privacy cleanup</h2>
+        <p class="sub" id="privStatus"></p>
+        <div class="privlist" id="privList"></div>
+      </section>
+
+      <!-- More -->
+      <section class="setcard glass">
+        <h2>More</h2>
+        <div class="pills">
+          <button class="pill focusable" id="tvSettings">TV settings</button>
+          <button class="pill focusable" id="tryScreensaver">Show screensaver</button>
+        </div>
+        <p class="sub small">Scenes, the glass clock and the Antonio font come from couch-tv (MIT licence, github.com/Seagey/couch-tv); the scene images were AI-generated for that project and are free to use. Antonio font: SIL Open Font License.</p>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- scene ----------
+  function paintScenes() {
+    const box = $("#scenePills"), cur = api.getPref("scene") || "auto";
+    box.innerHTML = "";
+    [{ id: "auto", name: "Auto" }].concat(SCENE_LIB).forEach((s) => {
+      const b = el("button", "pill focusable" + (s.id === cur ? " on" : ""), esc(s.name));
+      b.addEventListener("click", () => { api.setPref("scene", s.id); paintScenes(); focusEl(box.children[[{ id: "auto" }].concat(SCENE_LIB).findIndex((x) => x.id === s.id)]); toast(s.id === "auto" ? "Scene: automatic" : "Scene: " + s.name); });
+      box.appendChild(b);
+    });
+  }
+
+  // ---------- privacy ----------
+  function paintPrivacy() {
+    const list = window.PRIVACY_LIST || [];
+    const st = api.packageStates(list.map((x) => x.pkg));
+    const present = list.filter((x) => st[x.pkg] && st[x.pkg] !== "missing");
+    const off = present.filter((x) => st[x.pkg] === "off").length;
+    $("#privStatus").textContent = present.length
+      ? off + " of " + present.length + " tracking / ad / promo apps on this TV are switched off. Switching them is done from the PC (launcher\\privacy.ps1) — fully reversible."
+      : "None of the listed apps were found (or this is a preview).";
+    const box = $("#privList");
+    box.innerHTML = "";
+    list.forEach((x) => {
+      const s = st[x.pkg] || "missing";
+      const r = el("div", "privrow focusable");
+      r.tabIndex = 0;
+      r.innerHTML = '<div><b>' + esc(x.name) + '</b><span>' + esc(x.what) + "</span></div><em class=\"" + s + "\">" + (s === "on" ? "On" : s === "off" ? "Off" : "Not on this TV") + "</em>";
+      box.appendChild(r);
+    });
+  }
+
+  $("#tvSettings").addEventListener("click", () => api.settings());
+  $("#tryScreensaver").addEventListener("click", () => { location.href = "ambient.html"; });
+
+  document.addEventListener("DOMContentLoaded", async () => {
+    paintScenes();
+    paintPrivacy();
+    setTimeout(() => focusEl($("#scenePills .pill.on") || $("#scenePills .pill")), 200);
+  });
+})();
+</script>
+</body>
+</html>

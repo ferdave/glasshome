@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920, user-scalable=no">
+<title>Home dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Geist:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<script src="config.default.js"></script>
+<script src="core.js"></script>
+</head>
+<body>
+<div id="stage">
+  <div class="wall-fallback"></div>
+  <div class="scrim"></div>
+  <div class="page">
+    <header class="header" data-zone="header">
+      <div class="left">
+        <a class="iconbtn focusable" href="index.html" aria-label="Back to home screen">
+          <svg aria-hidden="true" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+        </a>
+        <div class="clock" data-clock>--:--</div>
+        <div class="title">Home</div>
+      </div>
+      <nav class="tabs glass" aria-label="Categories" id="tabs"></nav>
+    </header>
+    <div id="notice" class="notice hidden"></div>
+    <div class="grid all" id="grid" data-zone="grid"></div>
+  </div>
+  <div class="cammodal hidden" id="camModal" role="dialog" aria-label="Camera">
+    <iframe tabindex="-1" allow="autoplay"></iframe>
+    <video tabindex="-1" muted autoplay playsinline></video>
+    <img class="mj" alt="">
+    <div class="msg hidden"><b></b><span></span></div>
+    <div class="top"><b></b><span class="badge"><i></i>LIVE</span></div>
+    <div class="bot"><span class="src"></span><span>OK or Back to close</span></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  const D = cfg.devices;
+  const TABS = ["All", "Lights", "Security"];
+  let tab = 0;
+  let map = {};            // Hubitat devices by id
+  let camFrom = null;      // tile the camera modal was opened from (focus returns there)
+  let camFromHome = false; // opened via dashboard.html#cam=<src> from the home screen
+  let camOnline = null;    // go2rtc reachable? (null = not checked yet)
+  let armedUnlock = 0;     // unlock needs a second press within 4 s
+
+  const LOCK_SVG = '<svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path class="shackle" d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+
+  // ---------- tabs ----------
+  function renderTabs() {
+    const nav = $("#tabs");
+    nav.innerHTML = "";
+    TABS.forEach((name, i) => {
+      const b = el("button", "tab focusable" + (i === tab ? " active" : ""), esc(name));
+      if (i === tab) b.setAttribute("data-entry", "");
+      b.addEventListener("click", () => { if (tab !== i) { tab = i; renderTabs(); renderGrid(); focusEl(nav.children[i]); } });
+      nav.appendChild(b);
+    });
+  }
+
+  // ---------- builders ----------
+  function lightTile(id) {
+    const b = el("button", "tile glass focusable");
+    b.dataset.light = id;
+    b.innerHTML = '<span class="k"><span>Light</span><span class="dot"></span></span><span><span class="n" style="display:block"></span><span class="s"></span></span>';
+    b.addEventListener("click", () => toggleSwitch(id));
+    return b;
+  }
+  function tempTile(id, label) {
+    const b = el("div", "tile glass");
+    b.dataset.temp = id;
+    b.dataset.batt = id;
+    b.innerHTML = '<span class="k"><span>Temperature</span><span class="bslot"></span></span><span><span class="n" style="display:block">' + esc(label) + '</span><span class="s">—</span></span>';
+    return b;
+  }
+  function doorCard() {
+    const s = el("section", "tile glass door");
+    s.setAttribute("aria-label", "Front door");
+    s.setAttribute("data-navgroup", "door");
+    s.innerHTML =
+      '<div><h2>Front door</h2><div class="sub"><span>' + esc(D.lockLabel || "Smart lock") + '</span><span class="bslot" data-batt="' + D.lock + '"></span></div></div>' +
+      '<div class="mid"><button class="ring focusable" data-act="ring" aria-label="Lock or unlock the front door">' + LOCK_SVG + '</button><span class="lockstate">—</span><button class="pillbtn focusable" data-act="lock">—</button></div>' +
+      '<div class="rows"><div class="row" data-contact><span class="lc"><span class="l">Door</span><span class="bslot" data-batt="' + D.doorContact + '"></span></span><span class="v">—</span></div>' +
+      '<button class="row focusable" data-porch><span class="l">Light</span><span class="v">—</span></button></div>';
+    $("[data-act=lock]", s).addEventListener("click", lockPressed);
+    $("[data-act=ring]", s).addEventListener("click", lockPressed); // the lock icon does the same as the button
+    $("[data-porch]", s).addEventListener("click", () => toggleSwitch(D.porchLight));
+    return s;
+  }
+  function camCard(cam) {
+    const c = el("div", "cam focusable");
+    c.tabIndex = 0;
+    c.setAttribute("role", "button");
+    c.setAttribute("aria-label", cam.name + " live view");
+    const live = !!cfg.go2rtc;
+    if (!live) c.classList.add("nocfg");
+    // Tiles show a still frame refreshed every few seconds (light on the TV); live video is in the full-screen view
+    c.dataset.src = cam.src;
+    c.innerHTML =
+      (live ? '<img class="snap" alt="">' : "") +
+      (live
+        ? '<div class="ph"><b>Camera offline</b><span>Can\'t reach go2rtc at ' + esc(cfg.go2rtc.replace(/^https?:\/\//, "").replace(/\/$/, "")) + '</span></div>'
+        : '<div class="ph"><b>Camera not set up yet</b><span>Add go2rtc to config.json</span></div>') +
+      (live ? '<span class="badge"><i></i>LIVE</span>' : "") +
+      '<div class="foot"><div><b>' + esc(cam.name) + '</b><span>' + esc(live ? "go2rtc · " + cam.src : "Placeholder") + '</span></div><span class="hint">OK for full screen</span></div>';
+    c.addEventListener("click", () => openCam(cam, c));
+    return c;
+  }
+  // Full-screen live video uses cam.live if set (e.g. an H.264 transcode of an H.265 camera); stills use cam.src
+  function streamUrl(cam) {
+    return cfg.go2rtc.replace(/\/$/, "") + "/stream.html?src=" + encodeURIComponent(cam.live || cam.src) + "&mode=" + encodeURIComponent(cfg.cameraMode || "mse");
+  }
+  // Mark camera tiles offline when go2rtc doesn't answer (instead of a black box)
+  async function checkCams() {
+    if (!cfg.go2rtc) return;
+    const ok = await go2rtcReachable();
+    camOnline = ok;
+    document.querySelectorAll(".cam").forEach((c) => {
+      if (!ok) { setCamMsg(c, "Camera offline", "Can't reach go2rtc at " + cfg.go2rtc.replace(/^https?:\/\//, "").replace(/\/$/, "")); c.classList.add("offline"); }
+    });
+    if (camModalOpen() && !ok) $("#camModal .msg").classList.remove("hidden");
+    if (ok) refreshSnaps();
+  }
+  function setCamMsg(c, title, sub) { const ph = $(".ph", c); if (ph) { $("b", ph).textContent = title; $("span", ph).textContent = sub; } }
+  // Load a fresh still for each camera tile; a camera that returns no picture is marked on its own
+  let snapBusy = false;
+  function refreshSnaps() {
+    if (snapBusy || camModalOpen() || camOnline === false) return;
+    const cams = Array.from(document.querySelectorAll(".cam[data-src]"));
+    if (!cams.length) return;
+    snapBusy = true;
+    let left = cams.length;
+    cams.forEach((c) => {
+      const img = new Image();
+      let settled = false;
+      const done = () => { if (--left === 0) snapBusy = false; };
+      const timer = setTimeout(() => fail(), 15000);
+      function fail() {
+        if (settled) return; settled = true;
+        clearTimeout(timer);
+        if (!$(".snap", c).getAttribute("src")) { setCamMsg(c, "No picture", "go2rtc can't get video from this camera"); c.classList.add("offline"); }
+        done();
+      }
+      img.onload = () => {
+        if (settled) return;
+        if (img.naturalWidth === 0) { fail(); return; }
+        settled = true;
+        clearTimeout(timer);
+        $(".snap", c).src = img.src; c.classList.remove("offline");
+        done();
+      };
+      img.onerror = fail;
+      img.src = cfg.go2rtc.replace(/\/$/, "") + "/api/frame.jpeg?src=" + encodeURIComponent(c.dataset.src) + "&t=" + Date.now();
+    });
+  }
+
+  function renderGrid() {
+    const g = $("#grid");
+    g.className = "grid " + TABS[tab].toLowerCase();
+    g.innerHTML = "";
+    const cams = cfg.cameras || [];
+    const lights = D.lights || [];
+    if (tab === 0) {
+      if (cams[0]) g.appendChild(camCard(cams[0]));
+      if (cams[1]) g.appendChild(camCard(cams[1]));
+      g.appendChild(doorCard());
+      lights.forEach((id) => g.appendChild(lightTile(id)));
+      g.appendChild(tempTile(D.garageTemp, D.tempLabel || "Temperature"));
+    } else if (tab === 1) {
+      lights.forEach((id) => g.appendChild(lightTile(id)));
+    } else {
+      cams.slice(0, 7).forEach((c) => g.appendChild(camCard(c)));
+      g.appendChild(doorCard());
+    }
+    // Down from the header always enters the grid at its first (top-left) item
+    const first = g.querySelector(".focusable");
+    if (first) first.setAttribute("data-entry", "");
+    updateStates();
+    checkCams();
+  }
+
+  // ---------- state ----------
+  function updateStates() {
+    const dev = (id) => map[String(id)];
+    document.querySelectorAll("[data-light]").forEach((b) => {
+      const d = dev(b.dataset.light);
+      const sw = hubAttr(d, "switch");
+      b.classList.toggle("on", sw === "on");
+      $(".n", b).textContent = (d && d.label) || "Light " + b.dataset.light;
+      $(".s", b).textContent = sw ? (sw === "on" ? "On" : "Off") : "—";
+    });
+    document.querySelectorAll("[data-temp]").forEach((b) => {
+      const t = hubAttr(dev(b.dataset.temp), "temperature");
+      $(".s", b).textContent = t != null ? Math.round(parseFloat(t) * 10) / 10 + "°" : "—";
+    });
+    // Battery gauges: any element with data-batt (or containing a .bslot) shows that device's level
+    document.querySelectorAll("[data-batt]").forEach((b) => {
+      const slot = b.classList.contains("bslot") ? b : $(".bslot", b);
+      if (slot) slot.innerHTML = batteryHTML(hubAttr(dev(b.dataset.batt), "battery"));
+    });
+    const door = $(".door");
+    if (door) {
+      const lock = hubAttr(dev(D.lock), "lock");
+      door.classList.toggle("unlocked", lock && lock !== "locked");
+      $(".lockstate", door).textContent = lock ? lock[0].toUpperCase() + lock.slice(1) : "—";
+      const btn = $("[data-act=lock]", door);
+      if (!armedUnlock) { btn.textContent = lock === "locked" ? "Unlock" : "Lock"; btn.classList.remove("warn"); }
+      const sh = $(".shackle", door);
+      if (sh) sh.setAttribute("d", lock === "locked" ? "M8 11V8a4 4 0 0 1 8 0v3" : "M8 11V8a4 4 0 0 1 7.5-2");
+      const contact = hubAttr(dev(D.doorContact), "contact");
+      $("[data-contact] .v", door).textContent = contact ? contact[0].toUpperCase() + contact.slice(1) : "—";
+      const porch = hubAttr(dev(D.porchLight), "switch");
+      const pr = $("[data-porch]", door);
+      pr.classList.toggle("on", porch === "on");
+      $(".v", pr).textContent = porch ? (porch === "on" ? "On" : "Off") : "—";
+    }
+  }
+
+  async function refresh() {
+    if (!api.hubReady) return;
+    try {
+      map = await hubDevices();
+      updateStates();
+      $("#notice").classList.add("hidden");
+    } catch (e) {
+      showNotice("Can't reach Hubitat (" + e.message + ")");
+    }
+  }
+  function showNotice(t) { const n = $("#notice"); n.textContent = t; n.classList.remove("hidden"); }
+
+  // ---------- actions ----------
+  async function command(id, cmd) {
+    try {
+      await api.hub("devices/" + id + "/" + cmd);
+    } catch (e) {
+      toast("Command failed: " + e.message);
+    }
+    setTimeout(refresh, 1200);
+  }
+  function toggleSwitch(id) {
+    if (!api.hubReady) { toast("Hubitat isn't set up yet"); return; }
+    const d = map[String(id)];
+    const on = hubAttr(d, "switch") === "on";
+    if (d) { // optimistic update
+      if (Array.isArray(d.attributes)) { const a = d.attributes.find((x) => x.name === "switch"); if (a) a.currentValue = on ? "off" : "on"; }
+      else if (d.attributes) d.attributes.switch = on ? "off" : "on";
+      updateStates();
+    }
+    command(id, on ? "off" : "on");
+  }
+  function lockPressed() {
+    if (!api.hubReady) { toast("Hubitat isn't set up yet"); return; }
+    const lock = hubAttr(map[String(D.lock)], "lock");
+    const btn = $(".door [data-act=lock]");
+    if (lock !== "locked") { command(D.lock, "lock"); toast("Locking front door…"); return; }
+    if (armedUnlock && Date.now() - armedUnlock < 4000) {
+      armedUnlock = 0;
+      command(D.lock, "unlock");
+      toast("Unlocking front door…");
+      return;
+    }
+    armedUnlock = Date.now();
+    btn.textContent = "Press again to unlock";
+    btn.classList.add("warn");
+    setTimeout(() => { if (armedUnlock && Date.now() - armedUnlock >= 4000) { armedUnlock = 0; updateStates(); } }, 4100);
+  }
+  // ---------- full-screen camera modal ----------
+  function camModalOpen() { return !$("#camModal").classList.contains("hidden"); }
+  function openCam(cam, tile) {
+    const m = $("#camModal");
+    camFrom = tile;
+    $(".top b", m).textContent = cam.name;
+    $(".bot .src", m).textContent = cfg.go2rtc ? "go2rtc · " + cam.src : "";
+    const frame = $("iframe", m);
+    const msg = $(".msg", m);
+    if (!cfg.go2rtc) {
+      frame.removeAttribute("src");
+      $("b", msg).textContent = "Camera not set up yet";
+      $("span", msg).textContent = "Add go2rtc and cameras to config.json";
+      msg.classList.remove("hidden");
+    } else {
+      // Default player = go2rtc's web player (WebRTC/MSE). "cameraPlayer": "hls" in config.json uses
+      // the browser's own <video> with go2rtc HLS instead. Both need H.264 to be reliable on this TV.
+      const vid = $("video", m);
+      const mj = $("img.mj", m);
+      const g = cfg.go2rtc.replace(/\/$/, "");
+      m.classList.remove("hls", "mjpeg");
+      mj.removeAttribute("src");
+      if (cam.mjpeg) {
+        // MJPEG (go2rtc ffmpeg transcode): plays on any browser, no video decoder needed
+        frame.removeAttribute("src"); vid.removeAttribute("src");
+        m.classList.add("mjpeg");
+        mj.src = g + "/api/stream.mjpeg?src=" + encodeURIComponent(cam.mjpeg);
+      } else if (cfg.cameraPlayer !== "hls") { frame.src = streamUrl(cam); vid.removeAttribute("src"); m.classList.remove("hls"); }
+      else {
+        frame.removeAttribute("src");
+        m.classList.add("hls");
+        vid.muted = true;
+        vid.src = g + "/api/stream.m3u8?src=" + encodeURIComponent(cam.live || cam.src) + "&mp4";
+        vid.play().catch(() => {});
+      }
+      $("b", msg).textContent = "Camera offline";
+      $("span", msg).textContent = "Can't reach go2rtc at " + cfg.go2rtc.replace(/^https?:\/\//, "").replace(/\/$/, "") + ". Check that the go2rtc server is running.";
+      msg.classList.toggle("hidden", camOnline !== false);
+      // A camera whose tile already shows "No picture": say so instead of go2rtc's error player
+      if (camOnline !== false && tile && tile.classList && tile.classList.contains("offline")) {
+        $("b", msg).textContent = $(".ph b", tile).textContent;
+        $("span", msg).textContent = $(".ph span", tile).textContent + ". Trying anyway…";
+        msg.classList.remove("hidden");
+      }
+      checkCams();
+    }
+    m.classList.remove("hidden");
+    if (document.activeElement) document.activeElement.blur();
+  }
+  function closeCam() {
+    // Opened straight from a home-screen camera tile: go back there
+    if (camFromHome) { location.href = "index.html#focus=" + encodeURIComponent("cam:" + (camFrom ? camFrom.dataset.src : "")); return; }
+    const m = $("#camModal");
+    m.classList.add("hidden");
+    $("iframe", m).removeAttribute("src"); // stop the stream
+    const v = $("video", m); v.pause(); v.removeAttribute("src"); v.load();
+    $("img.mj", m).removeAttribute("src"); // stops the MJPEG transcode
+    lastKeyAt = Date.now();
+    if (camFrom) focusEl(camFrom);
+  }
+  window.backHandlers.push(() => { if (camModalOpen()) { closeCam(); return true; } return false; });
+
+  // The go2rtc player inside a camera iframe grabs focus while it loads, which left the remote
+  // with "nothing selected" (next press jumped to the back arrow). Keep focus on our own items.
+  // Android also moves DOM focus to the first item (the back arrow) when the video views change
+  // focus. Any focus change that didn't come from a remote press within 600 ms is undone.
+  let lastFocus = null;
+  let lastKeyAt = 0;
+  document.addEventListener("keydown", () => { lastKeyAt = Date.now(); }, true);
+  document.addEventListener("focusin", (e) => {
+    const t = e.target;
+    if (!(t.classList && t.classList.contains("focusable"))) return;
+    if (lastFocus && t !== lastFocus && document.contains(lastFocus) && !camModalOpen() && Date.now() - lastKeyAt > 600) {
+      setTimeout(() => lastFocus.focus({ preventScroll: true }), 0);
+      return;
+    }
+    lastFocus = t;
+  });
+  function reclaimFocus() {
+    if (camModalOpen()) return;
+    const a = document.activeElement;
+    if (!a || a === document.body || a.tagName === "IFRAME") {
+      const t = (lastFocus && document.contains(lastFocus)) ? lastFocus : $(".cam.focusable, .tile.focusable");
+      if (t) t.focus({ preventScroll: true });
+    }
+  }
+  window.addEventListener("blur", () => setTimeout(reclaimFocus, 0));
+  setInterval(reclaimFocus, 1000);
+  // While the modal is open: OK closes it, arrows do nothing (nothing behind it gets selected)
+  const baseKey = window.__tvKey;
+  window.__tvKey = function (k) {
+    lastKeyAt = Date.now();
+    if (camModalOpen()) { if (k === "ok") closeCam(); return; }
+    baseKey(k);
+  };
+  document.addEventListener("keydown", (e) => {
+    if (!camModalOpen()) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (e.key === "Escape" || e.key === "Enter" || e.key === "Backspace") closeCam();
+  }, true);
+
+  document.addEventListener("DOMContentLoaded", () => {
+    renderTabs();
+    renderGrid();
+    if (!api.hubReady) showNotice(api.native ? "Hubitat isn't set up yet: add your Maker API token to config.json" : "Preview mode: no live data");
+    refresh();
+    setInterval(refresh, Math.max(5, cfg.pollSeconds || 10) * 1000);
+    setInterval(checkCams, 30000);
+    setInterval(refreshSnaps, Math.max(3, cfg.snapshotSeconds || 5) * 1000);
+    // Home screen camera tile → open that camera full screen right away
+    const hm = /[#&]cam=([^&]+)/.exec(location.hash);
+    if (hm) {
+      const src = decodeURIComponent(hm[1]);
+      const cam = (cfg.cameras || []).find((c) => c.src === src);
+      if (cam) { camFromHome = true; openCam(cam, document.querySelector('.cam[data-src="' + CSS.escape(src) + '"]') || { dataset: { src } }); }
+    }
+    // Initial selection = first camera (our own focus change, so the focus guard must allow it)
+    const initFocus = () => { lastKeyAt = Date.now(); focusEl($(".tile.focusable, .cam.focusable") || $(".tab")); };
+    setTimeout(initFocus, 200);
+    setTimeout(() => { if (!document.activeElement || !document.activeElement.closest("#grid")) initFocus(); }, 1500);
+  });
+})();
+</script>
+</body>
+</html>

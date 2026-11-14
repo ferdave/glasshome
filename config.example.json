@@ -1,0 +1,20 @@
+﻿{
+  "hubitat": {
+    "host": "192.168.1.20",
+    "appId": "123",
+    "token": "PASTE-YOUR-MAKER-API-ACCESS-TOKEN"
+  },
+  "location": { "name": "Your town", "lat": 51.5072, "lon": -0.1276, "timezone": "Europe/London" },
+  "devices": {
+    "lock": 1, "lockLabel": "Front door lock",
+    "doorContact": 2, "porchLight": 3,
+    "lights": [4, 5, 6, 7, 8, 9],
+    "garageTemp": 10, "tempLabel": "Garage"
+  },
+  "go2rtc": "http://192.168.1.50:1984",
+  "cameras": [
+    { "name": "Driveway", "src": "driveway" },
+    { "name": "Backyard", "src": "backyard", "mjpeg": "backyard_mjpeg" },
+    { "name": "Doorbell", "src": "doorbell", "doorbell": true }
+  ]
+}

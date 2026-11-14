@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920, user-scalable=no">
+<title>Glass Home</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Geist:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<script src="config.default.js"></script>
+<script src="logos/logos.js"></script>
+<script src="core.js"></script>
+</head>
+<body data-scenes>
+<div id="stage">
+  <div class="wall-fallback"></div>
+
+  <!-- date + weather above the big clock (the clock itself is drawn by startScenes in core.js) -->
+  <div class="dateline">
+    <a class="focusable" href="weather.html" id="wx" aria-label="Weather: open forecast">
+      <span id="dateText"></span><span class="wx"><span id="wxIcon"></span><span id="wxText">…</span> ›</span>
+    </a>
+  </div>
+
+  <div class="topicons">
+    <button class="iconbtn focusable" id="btnInputs" aria-label="Inputs (HDMI)">
+      <svg aria-hidden="true" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h16v6l-3 3H7l-3-3z"/><path d="M8 11h8"/><path d="M12 17v3"/></svg>
+    </button>
+    <button class="iconbtn focusable" id="btnPicture" aria-label="Picture settings">
+      <svg aria-hidden="true" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8"/><circle cx="12" cy="10.5" r="3.2"/><path d="M12 7.3v6.4a3.2 3.2 0 0 0 0-6.4z" fill="currentColor"/></svg>
+    </button>
+    <button class="iconbtn focusable" id="btnAmbient" aria-label="Screensaver">
+      <svg aria-hidden="true" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18l5-6 4 4 3-3 6 5"/><circle cx="16.5" cy="7.5" r="2"/><rect x="2.5" y="3.5" width="19" height="17" rx="3"/></svg>
+    </button>
+    <button class="iconbtn focusable" id="btnApps" aria-label="All apps">
+      <svg aria-hidden="true" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="4" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8"/></svg>
+    </button>
+    <a class="iconbtn focusable" id="btnGlass" href="settings.html" aria-label="Glass Home settings">
+      <svg aria-hidden="true" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+    </a>
+  </div>
+
+  <!-- quick panels -->
+  <section class="qpanel glass hidden" id="inputsPanel" data-zone="qpanel" aria-label="Inputs">
+    <h2>Inputs</h2><div class="qlist" id="inputList"></div>
+  </section>
+
+  <section class="homewidget glass" id="hw" aria-label="Smart home">
+    <div class="hw-head"><b>Home</b><a class="hw-open focusable" href="dashboard.html" data-key="open">Open dashboard ›</a></div>
+    <div class="hw-grid" id="hwGrid"></div>
+  </section>
+
+  <nav class="dock glass" id="dock" aria-label="Apps" data-zone="dock">
+    <div class="dockrow" id="dockRow"></div>
+  </nav>
+
+  <div class="overlay hidden" id="allApps" data-zone="overlay">
+    <div class="panel glass">
+      <h2>All apps</h2>
+      <div class="appgrid" id="appGrid"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  const style = cfg.iconStyle;
+  // index.html#focus=<tile key>: coming back from a camera opened on the widget → reselect that tile
+  const RETURN_KEY = (() => { const m = /[#&]focus=([^&]+)/.exec(location.hash); return m ? decodeURIComponent(m[1]) : null; })();
+  let returnDone = false;
+
+  // ---------- apps ----------
+  // Default is white logos everywhere (dock and All apps). Colour only if config asks for it.
+  // Order for white: your own PNG (custom) -> bundled brand SVG (Simple Icons / Custom Brand Icons)
+  // -> white logo generated from the app's own icon.
+  const bundled = new Set(window.BUNDLED_LOGOS || []);
+  function logoFor(app) {
+    if (style === "custom" && app.custom) return { src: app.custom, cls: "" };
+    if (style === "banner" && app.banner) return { src: app.banner, cls: "" };
+    if (style === "color") return { src: app.icon, cls: "color" };
+    if (bundled.has(app.pkg)) return { src: "logos/" + app.pkg + ".svg", cls: "svg" };
+    return { src: app.mono || app.icon, cls: "mono" };
+  }
+  function appButton(app) {
+    const b = el("button", "dockitem focusable");
+    b.setAttribute("aria-label", app.label);
+    if (app.pkg) b.dataset.pkg = app.pkg;
+    const lg = app.settings
+      ? '<svg aria-hidden="true" width="84" height="84" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>'
+      : (() => { const l = logoFor(app); return '<img alt="" class="' + l.cls + '" src="' + l.src + '">'; })();
+    b.innerHTML = '<span class="logo">' + lg + '</span><span class="name">' + esc(app.label) + "</span>";
+    b.addEventListener("click", () => (app.settings ? api.settings() : api.launch(app.pkg)));
+    return b;
+  }
+
+  let allApps = [];
+  let dockShown = false;
+  let lastSig = "";
+  async function loadApps() {
+    const list = (await api.apps()) || [];
+    // Only rebuild when the installed apps actually changed, so the highlight never jumps
+    const sig = list.map((a) => a.pkg).join(",");
+    if (sig === lastSig && dockShown) return;
+    lastSig = sig;
+    allApps = list;
+    const byPkg = {};
+    allApps.forEach((a) => (byPkg[a.pkg] = a));
+    const row = $("#dockRow");
+    const act = document.activeElement;
+    // Before the first remote press the dock gets the selection (unless we're returning to a widget tile)
+    const returning = !!RETURN_KEY;
+    const hadDockFocus = !act || act === document.body || row.contains(act) || (lastKeyAt === 0 && !returning);
+    const keepPkg = act && row.contains(act) ? act.dataset.pkg : null;
+    row.innerHTML = "";
+    const dock = $("#dock");
+    dock.classList.toggle("banner", style === "banner");
+    dock.classList.add("labels-" + (cfg.labels || "both"));
+    (cfg.dock || []).forEach((pkg) => { if (byPkg[pkg]) row.appendChild(appButton(byPkg[pkg])); });
+    row.appendChild(appButton({ label: "Settings", settings: true }));
+    const first = row.firstElementChild;
+    if (first) first.setAttribute("data-autofocus", "");
+    // Put the highlight in the dock only if it was there (or nowhere) — never pull it away
+    // from the weather, widget or top icons if you've already moved there.
+    if (hadDockFocus) {
+      const same = keepPkg && row.querySelector('[data-pkg="' + keepPkg + '"]');
+      if (window.__allowFocus) __allowFocus();
+      focusEl(same || first);
+      if (!same) row.scrollLeft = 0;
+    }
+    dockShown = true;
+
+    const grid = $("#appGrid");
+    if (grid.contains(document.activeElement)) return; // don't rebuild All apps while you're in it
+    grid.innerHTML = "";
+    allApps.slice().sort((a, b) => a.label.localeCompare(b.label)).forEach((a) => grid.appendChild(appButton(a)));
+  }
+
+  // ---------- all apps overlay ----------
+  const overlay = $("#allApps");
+  function openApps() {
+    overlay.classList.remove("hidden");
+    window.__modal = overlay;
+    focusEl($("#appGrid .dockitem"));
+  }
+  function closeApps() {
+    overlay.classList.add("hidden");
+    window.__modal = null;
+    focusEl($("#btnApps"));
+  }
+  window.backHandlers.push(() => { if (!overlay.classList.contains("hidden")) { closeApps(); return true; } return false; });
+
+  // Mouse wheel / trackpad (PC preview or an air mouse): scroll the dock sideways and All apps down.
+  $("#dockRow").addEventListener("wheel", (e) => { e.preventDefault(); $("#dockRow").scrollLeft += e.deltaY + e.deltaX; }, { passive: false });
+  $("#appGrid").addEventListener("wheel", (e) => { e.preventDefault(); $("#appGrid").scrollTop += e.deltaY; }, { passive: false });
+
+  $("#btnApps").addEventListener("click", openApps);
+
+  // ---------- quick buttons ----------
+  let openPanel = null;
+  function showPanel(p, from) {
+    closePanel();
+    p.classList.remove("hidden");
+    p._from = from;
+    window.__modal = p;
+    openPanel = p;
+    if (window.__allowFocus) __allowFocus();
+    focusEl($(".qbtn.cur", p) || $(".qbtn", p));
+  }
+  function closePanel() {
+    if (!openPanel) return;
+    const p = openPanel;
+    openPanel = null;
+    p.classList.add("hidden");
+    window.__modal = null;
+    if (p._from) { if (window.__allowFocus) __allowFocus(); focusEl(p._from); }
+  }
+  window.backHandlers.push(() => { if (openPanel) { closePanel(); return true; } return false; });
+
+  $("#btnInputs").addEventListener("click", () => {
+    const list = $("#inputList");
+    list.innerHTML = "";
+    const ins = api.inputs();
+    if (!ins.length) list.innerHTML = '<p class="note">No inputs found.</p>';
+    ins.forEach((i) => {
+      const b = el("button", "qbtn focusable", esc(i.label) + "<small>" + (i.connected ? "Connected" : "Nothing plugged in") + "</small>");
+      b.addEventListener("click", () => { closePanel(); api.openInput(i.id); });
+      list.appendChild(b);
+    });
+    showPanel($("#inputsPanel"), $("#btnInputs"));
+  });
+  $("#btnPicture").addEventListener("click", () => api.picture());
+  $("#btnAmbient").addEventListener("click", () => { location.href = "ambient.html"; });
+
+
+  // ---------- scenes, date + weather ----------
+  const scenes = cfg.theme === "wallpapers" ? null : startScenes();
+  function paintDate() {
+    const t = new Date().toLocaleDateString("en-CA", { weekday: "long", day: "numeric", month: "long" });
+    $("#dateText").textContent = t;
+  }
+  async function loadWeather() {
+    paintDate();
+    try {
+      const w = await weather();
+      const c = w.f.current;
+      const [txt, kind] = WMO(c.weather_code);
+      $("#wxIcon").innerHTML = wxIcon(c.is_day === 0 && kind === "sun" ? "moon" : kind, 30);
+      $("#wxText").textContent = Math.round(c.temperature_2m) + "° " + txt;
+    } catch (e) {
+      $("#wxText").textContent = "Weather";
+    }
+  }
+  setInterval(paintDate, 60000);
+
+  // ---------- home widget (3 x 3) ----------
+  // Every tile is selectable: lights toggle, cameras open full screen, lock/temp open the dashboard.
+  const snapCache = {};   // last good still per camera src, so re-renders don't flash
+  const noPic = new Set(); // cameras whose last still failed
+  let hwMap = null;
+  function tile(key, kind, name, state, on, battery) {
+    const b = battery != null ? batteryHTML(battery) : "";
+    return '<button class="hw-tile focusable' + (on ? " on" : "") + '" data-key="' + esc(key) + '" aria-label="' + esc(kind + " " + name) + '"><span class="k"><span>' + esc(kind) + '</span><span class="dot' + (on ? " on" : "") + '"></span></span>' +
+      '<span><span class="n" style="display:block">' + esc(name) + '</span>' +
+      (b ? '<span class="sline"><span class="s">' + esc(state) + "</span>" + b + "</span>" : '<span class="s">' + esc(state) + "</span>") +
+      "</span></button>";
+  }
+  function camTile(c, camOk) {
+    const live = !c.missing && !!cfg.go2rtc && camOk;
+    const img = live && snapCache[c.src] ? '<img class="hw-snap" alt="" src="' + esc(snapCache[c.src]) + '">' : (live ? '<img class="hw-snap" alt="">' : "");
+    const state = c.missing ? "Not set up" : !cfg.go2rtc ? "Not set up" : camOk ? "" : "Offline";
+    return '<button class="hw-tile hw-cam focusable' + (live && noPic.has(c.src) ? " nopic" : "") + '" data-key="cam:' + esc(c.src || "") + '"' + (c.src ? ' data-src="' + esc(c.src) + '"' : "") + ' aria-label="' + esc((c.doorbell ? "Doorbell " : "Camera ") + c.name) + '">' + img +
+      '<span class="k"><span>' + esc(c.doorbell ? "Doorbell" : "Camera") + '</span>' + (live ? '<span class="live"><i></i>LIVE</span>' : "") + '</span>' +
+      '<span><span class="n" style="display:block">' + esc(c.name) + '</span>' + (state ? '<span class="s">' + esc(state) + "</span>" : '<span class="s np">No picture</span>') + "</span></button>";
+  }
+  async function loadWidget() {
+    const D = cfg.devices;
+    const cams = cfg.cameras || [];
+    let map = null;
+    const [camOk] = await Promise.all([
+      go2rtcReachable(),
+      api.hubReady ? hubDevices().then((m) => { map = m; }, () => { map = null; }) : null,
+    ]);
+    hwMap = map;
+    renderWidget(camOk);
+  }
+  let lastCamOk = false;
+  function renderWidget(camOk) {
+    if (camOk === undefined) camOk = lastCamOk;
+    lastCamOk = camOk;
+    const D = cfg.devices;
+    const cams = cfg.cameras || [];
+    const map = hwMap;
+    const dev = (id) => (map ? map[String(id)] : null);
+    const name = (id, fb) => (dev(id) && dev(id).label) || fb;
+    const parts = [];
+    const lock = hubAttr(dev(D.lock), "lock");
+    parts.push(tile("lock", "Lock", "Front door", lock ? lock[0].toUpperCase() + lock.slice(1) : "—", lock === "locked", hubAttr(dev(D.lock), "battery")));
+    // Two camera tiles: a doorbell if one is configured ("doorbell": true), otherwise the first two cameras
+    const bell = cams.find((c) => c.doorbell);
+    const others = cams.filter((c) => c !== bell);
+    const camTiles = (bell ? [bell] : []).concat(others).slice(0, 2);
+    while (camTiles.length < 2) camTiles.push({ name: "Camera", missing: true });
+    camTiles.forEach((c) => parts.push(camTile(c, camOk)));
+    (D.lights || []).slice(0, 5).forEach((id) => {
+      const sw = hubAttr(dev(id), "switch");
+      parts.push(tile("light:" + id, "Light", name(id, "Light " + id), sw ? (sw === "on" ? "On" : "Off") : "—", sw === "on"));
+    });
+    const t = hubAttr(dev(D.garageTemp), "temperature");
+    parts.push(tile("temp", "Temp", D.tempLabel || "Temperature", t != null ? Math.round(parseFloat(t) * 10) / 10 + "°" : "—", false, hubAttr(dev(D.garageTemp), "battery")));
+    // Re-rendering replaces the buttons: keep the selection on the same tile
+    const grid = $("#hwGrid");
+    const act = document.activeElement;
+    const keepKey = act && grid.contains(act) ? act.dataset.key : null;
+    grid.innerHTML = parts.join("");
+    if (keepKey) { const same = grid.querySelector('[data-key="' + CSS.escape(keepKey) + '"]'); if (same) { __allowFocus(); same.focus({ preventScroll: true }); } }
+    // Coming back from a camera opened on this widget (index.html#focus=cam:<src>): reselect that tile
+    if (RETURN_KEY && !returnDone) {
+      const t = grid.querySelector('[data-key="' + CSS.escape(RETURN_KEY) + '"]');
+      if (t) { returnDone = true; __allowFocus(); t.focus({ preventScroll: true }); history.replaceState(null, "", location.pathname); }
+    }
+    if (!api.hubReady) $("#hw .hw-open").textContent = api.native ? "Hubitat not set up ›" : "Preview ›";
+    if (camOk) refreshHomeSnaps();
+  }
+  // Camera stills on the widget, refreshed every 10 s
+  let homeSnapBusy = false;
+  function refreshHomeSnaps() {
+    if (homeSnapBusy || !cfg.go2rtc) return;
+    const tiles = Array.from(document.querySelectorAll("#hwGrid .hw-cam[data-src]"));
+    if (!tiles.length) return;
+    homeSnapBusy = true;
+    let left = tiles.length;
+    tiles.forEach((t) => {
+      const src = t.dataset.src;
+      const img = new Image();
+      let settled = false;
+      const finish = (ok) => {
+        if (settled) return; settled = true;
+        clearTimeout(timer);
+        const cur = document.querySelector('#hwGrid .hw-cam[data-src="' + CSS.escape(src) + '"]');
+        if (cur) {
+          if (ok) { snapCache[src] = img.src; noPic.delete(src); const el2 = $(".hw-snap", cur); if (el2) el2.src = img.src; cur.classList.remove("nopic"); }
+          else if (!snapCache[src]) { noPic.add(src); cur.classList.add("nopic"); }
+        }
+        if (--left === 0) homeSnapBusy = false;
+      };
+      const timer = setTimeout(() => finish(false), 15000);
+      img.onload = () => finish(img.naturalWidth > 0);
+      img.onerror = () => finish(false);
+      img.src = cfg.go2rtc.replace(/\/$/, "") + "/api/frame.jpeg?src=" + encodeURIComponent(src) + "&t=" + Date.now();
+    });
+  }
+  // OK on a widget tile
+  $("#hwGrid").addEventListener("click", (e) => {
+    const b = e.target.closest(".hw-tile");
+    if (!b) return;
+    const key = b.dataset.key || "";
+    if (key.startsWith("light:")) return toggleLight(key.slice(6));
+    if (key.startsWith("cam:") && b.dataset.src) { location.href = "dashboard.html#cam=" + encodeURIComponent(b.dataset.src); return; }
+    location.href = "dashboard.html"; // lock, temperature, cameras not set up
+  });
+  async function toggleLight(id) {
+    if (!api.hubReady) { toast("Hubitat isn't set up yet"); return; }
+    const d = hwMap && hwMap[String(id)];
+    const on = hubAttr(d, "switch") === "on";
+    if (d) { // optimistic update
+      if (Array.isArray(d.attributes)) { const a = d.attributes.find((x) => x.name === "switch"); if (a) a.currentValue = on ? "off" : "on"; }
+      else if (d.attributes) d.attributes.switch = on ? "off" : "on";
+      renderWidget();
+    }
+    try { await api.hub("devices/" + id + "/" + (on ? "off" : "on")); }
+    catch (e) { toast("Command failed: " + e.message); }
+    setTimeout(loadWidget, 1500);
+  }
+
+  // Android sometimes moves DOM focus to the first item on the page (the weather) by itself, e.g.
+  // when images load. Undo any focus change that didn't come from a remote press or from our own code.
+  let lastFocus = null;
+  let lastKeyAt = 0;
+  let allowNext = false;
+  // Our own code calls this right before it moves the selection (synchronous focus calls only)
+  window.__allowFocus = () => { allowNext = true; setTimeout(() => { allowNext = false; }, 0); };
+  const baseKey = window.__tvKey;
+  window.__tvKey = (k) => { lastKeyAt = Date.now(); baseKey(k); };
+  document.addEventListener("keydown", () => { lastKeyAt = Date.now(); }, true);
+  document.addEventListener("focusin", (e) => {
+    const t = e.target;
+    if (!(t.classList && t.classList.contains("focusable"))) return;
+    const ok = allowNext || Date.now() - lastKeyAt < 600 || (lastFocus && !document.contains(lastFocus) && t.dataset.key === lastFocus.dataset.key);
+    if (!ok && t !== lastFocus) {
+      // Spontaneous (Android): put it back where it was, or on the first app if nothing was selected yet
+      const back = lastFocus && document.contains(lastFocus) ? lastFocus : $("#dockRow .dockitem");
+      if (back && back !== t) { setTimeout(() => { __allowFocus(); back.focus({ preventScroll: true }); }, 0); return; }
+    }
+    lastFocus = t;
+  });
+
+  window.onTvResume = () => { loadApps(); loadWeather(); loadWidget(); };
+  window.onTvHome = () => { if (!overlay.classList.contains("hidden")) closeApps(); __allowFocus(); focusEl($("#dockRow .dockitem")); };
+
+  document.addEventListener("DOMContentLoaded", () => {
+    loadApps();
+    loadWeather();
+    loadWidget();
+    setInterval(loadWeather, 10 * 60 * 1000);
+    setInterval(loadWidget, 30 * 1000);
+    setInterval(() => { if (lastCamOk) refreshHomeSnaps(); }, 10 * 1000);
+  });
+})();
+</script>
+</body>
+</html>
