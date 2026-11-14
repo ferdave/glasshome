@@ -97,3 +97,8 @@ See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). In short: scenes, glass cl
 weather by [Open-Meteo](https://open-meteo.com); cameras via [go2rtc](https://github.com/AlexxIT/go2rtc).
 
 Brand logos belong to their owners; this project is not affiliated with any of them.
+
+## Licence
+
+Glass Home is released under the [MIT License](LICENSE). Bundled third-party code, images, fonts and logos keep
+their own licences — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
