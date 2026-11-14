@@ -8,7 +8,8 @@ Built for and tested on a Hisense Google TV (Android 14), 1920×1080 UI. Works w
 
 **Try it in your browser: [glasshome.fernandos.ca](https://glasshome.fernandos.ca)**. This is the real UI with made-up
 smart-home data: use the arrow keys, Enter and Esc, or click. The demo is built from the app's own pages by
-`demo/build.sh` (Cloudflare Pages: build command `bash demo/build.sh`, output directory `demo/dist`).
+`demo/build.sh` and served by a Cloudflare Worker (`wrangler.jsonc`; build command `bash demo/build.sh`,
+deploy command `npx wrangler deploy`).
 
 > **Demo-only extras:** the smart-home devices and cameras in the web demo are simulated (camera feeds are drawn
 > from the bundled scene photos), and the dock's **bounce and edge fade** that hint at more apps exist only in the

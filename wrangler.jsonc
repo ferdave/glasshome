@@ -1,0 +1,11 @@
+// Cloudflare Workers config for the web demo (glasshome.fernandos.ca).
+// Workers Builds: build command "bash demo/build.sh", deploy command "npx wrangler deploy".
+// "name" must match the Worker's name in the Cloudflare dashboard.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "glasshome",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./demo/dist"
+  }
+}

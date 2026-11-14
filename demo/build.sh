@@ -2,7 +2,7 @@
 # Builds the static web demo into demo/dist: the app's own pages (app/src/main/assets/web)
 # plus demo-bridge.js, which fakes the Android bridge with made-up smart-home data.
 #   bash demo/build.sh
-# Cloudflare Pages: build command "bash demo/build.sh", build output directory "demo/dist".
+# Cloudflare Workers Builds: build command "bash demo/build.sh", deploy "npx wrangler deploy" (see wrangler.jsonc).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 src="$here/../app/src/main/assets/web"
